@@ -1,0 +1,30 @@
+# Data — too large for git
+data/
+*.csv
+*.parquet
+*.gz
+
+# Jupyter noise
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
+*.pyo
+
+# Python environments
+venv/
+env/
+.env
+*.egg-info/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
