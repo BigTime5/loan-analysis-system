@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: loan-analysis-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    envVars:
+      - key: MODEL_PATH
+        value: /app/loan_default_model_v2.pkl
+    healthCheckPath: /health

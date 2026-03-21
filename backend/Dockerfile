@@ -6,9 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
-
-# Place your model bundle here
-# COPY loan_default_model_v2.pkl .
+COPY loan_default_model_v2.pkl .
 
 ENV MODEL_PATH=/app/loan_default_model_v2.pkl
 
