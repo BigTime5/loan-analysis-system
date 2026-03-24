@@ -12,9 +12,5 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: FRONTEND_URL
-        value: https://loan-analysis-system-4xw7gncli-bigtime5s-projects.vercel.app
-      - key: ADMIN_USER
-        value: ceo
-      - key: ADMIN_PASS
-        value: securepassword
+        value: "*"
     healthCheckPath: /health
