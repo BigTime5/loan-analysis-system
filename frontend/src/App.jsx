@@ -152,11 +152,7 @@ function AppContent() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/app/*" element={
-          <ProtectedRoute>
-            <AppShell />
-          </ProtectedRoute>
-        } />
+        <Route path="/app/*" element={<AppShell />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>

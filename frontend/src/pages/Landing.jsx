@@ -54,9 +54,9 @@ export default function Landing() {
         <button 
           className="btn btn-ghost" 
           style={{ padding: '0.4rem 1rem', fontSize: '0.7rem' }}
-          onClick={() => navigate(isAuthenticated ? '/app' : '/login')}
+          onClick={() => navigate('/app')}
         >
-          {isAuthenticated ? 'GO TO CONSOLE' : 'OPERATOR LOGIN'}
+          ENTER CONSOLE
         </button>
       </nav>
 
@@ -73,7 +73,7 @@ export default function Landing() {
           </p>
 
           <div className="hero-actions anim-fade-up d3">
-            <button className="btn btn-primary cta-btn" onClick={() => navigate(isAuthenticated ? '/app' : '/login')}>
+            <button className="btn btn-primary cta-btn" onClick={() => navigate('/app')}>
               LAUNCH TERMINAL <ArrowRight size={16} />
             </button>
             <div className="status-indicator">
