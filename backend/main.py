@@ -60,6 +60,21 @@ class DecisionLog(SQLModel, table=True):
     expected_loss:float
     scored_at:    str
 
+class ContactLead(SQLModel, table=True):
+    id: Optional[int] = SqlField(default=None, primary_key=True)
+    name: str = ""
+    email: str
+    company: str = ""
+    demo_date: str = ""
+    team_size: str = ""
+    message: str = ""
+    submitted_at: str
+
+class NewsletterSubscriber(SQLModel, table=True):
+    id: Optional[int] = SqlField(default=None, primary_key=True)
+    email: str
+    subscribed_at: str
+
 engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
 SQLModel.metadata.create_all(engine)
 
@@ -121,17 +136,17 @@ explainer  = None
 def load_bundle():
     global bundle, explainer
     if not os.path.exists(MODEL_PATH):
-        print(f"⚠  Model not found at {MODEL_PATH} — running in demo mode")
+        print(f"[WARN] Model not found at {MODEL_PATH} - running in demo mode")
         return
     with open(MODEL_PATH, "rb") as f:
         bundle = pickle.load(f)
     if HAS_SHAP and "model" in bundle:
         try:
             explainer = shap.TreeExplainer(bundle["model"])
-            print("✔  SHAP explainer ready")
+            print("[OK] SHAP explainer ready")
         except Exception as e:
-            print(f"⚠  SHAP init failed: {e}")
-    print("✔  Model bundle loaded")
+            print(f"[WARN] SHAP init failed: {e}")
+    print("[OK] Model bundle loaded")
 
 load_bundle()
 
@@ -204,6 +219,14 @@ class ApplicantInput(BaseModel):
     avg_cur_bal:        Optional[float] = None
     acc_open_past_24mths: Optional[float] = None
 
+# ── Field name set (used to filter CSV rows to valid ApplicantInput keys) ──
+# Evaluated once at startup — avoids the broken class-level getattr pattern
+_AI = ApplicantInput
+APPLICANT_FIELD_NAMES: set = (
+    set(_AI.model_fields.keys()) if hasattr(_AI, "model_fields")
+    else set(_AI.__fields__.keys())
+)
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -228,7 +251,8 @@ def build_dataframe(applicant: ApplicantInput) -> pd.DataFrame:
         df["open_acc_ratio"] = df["open_acc"] / df["total_acc"].clip(lower=1)
     for col in ["revol_bal", "loan_amnt", "installment", "avg_cur_bal"]:
         if col in df.columns:
-            df[f"log_{col}"] = np.log1p(df[col].fillna(0))
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+            df[f"log_{col}"] = np.log1p(df[col])
     df.drop(columns=["fico_range_low", "fico_range_high", "annual_inc"], errors="ignore", inplace=True)
     return df
 
@@ -295,7 +319,7 @@ def log_decision(session: Session, username: str, applicant: ApplicantInput,
         session.add(row)
         session.commit()
     except Exception as e:
-        print(f"⚠  Audit log error: {e}")
+        print(f"[WARN] Audit log error: {e}")
 
 # ══════════════════════════════════════════════════════════════════════
 # ENDPOINTS
@@ -359,30 +383,56 @@ def score_single(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def _sanitize_batch_row(row_dict: dict) -> dict:
+    """Clean a raw CSV row: replace NaN with None, coerce types, set defaults."""
+    import math
+    data = {
+        k: (None if isinstance(v, float) and math.isnan(v) else v)
+        for k, v in row_dict.items()
+    }
+    # Defaults for fields that might be missing from the CSV
+    data.setdefault("pub_rec", 0.0)
+    data.setdefault("pub_rec_bankruptcies", 0.0)
+    data.setdefault("application_type", "Individual")
+    data.setdefault("initial_list_status", "w")
+    data.setdefault("addr_state", "CA")
+    # term must be int — CSV may produce 36.0
+    if "term" in data and data["term"] is not None:
+        try:
+            data["term"] = int(float(data["term"]))
+        except (ValueError, TypeError):
+            pass
+    # Numeric coercions for other int-like fields
+    for int_field in ["open_acc", "total_acc", "mort_acc", "pub_rec",
+                      "pub_rec_bankruptcies", "acc_open_past_24mths",
+                      "num_actv_rev_tl"]:
+        if int_field in data and data[int_field] is not None:
+            try:
+                data[int_field] = float(data[int_field])
+            except (ValueError, TypeError):
+                pass
+    return data
+
+
 @app.post("/score/batch")
 async def score_batch(
-    file:     UploadFile = File(...),
-    session:  Session    = Depends(get_session),
+    file:    UploadFile = File(...),
+    session: Session    = Depends(get_session),
 ):
+    """Score a CSV of applicants, return JSON results for table display."""
     username = "admin"
     try:
         content = await file.read()
         df      = pd.read_csv(io.BytesIO(content))
         results = []
 
-        for _, row in df.iterrows():
+        for idx, row in df.iterrows():
             try:
-                applicant_data = row.to_dict()
-                applicant_data.setdefault("pub_rec", 0)
-                applicant_data.setdefault("pub_rec_bankruptcies", 0)
-                applicant_data.setdefault("application_type", "Individual")
-                applicant_data.setdefault("initial_list_status", "w")
-                applicant_data.setdefault("addr_state", "CA")
+                raw = _sanitize_batch_row(row.to_dict())
+                # Filter to only valid ApplicantInput fields — uses module-level set
+                filtered = {k: v for k, v in raw.items() if k in APPLICANT_FIELD_NAMES}
+                app_obj  = ApplicantInput(**filtered)
 
-                app_obj = ApplicantInput(**{
-                    k: v for k, v in applicant_data.items()
-                    if k in ApplicantInput.__fields__
-                })
                 pd_score, shap_reasons = score_applicant(app_obj)
                 tier, color, decision  = get_risk_tier(pd_score)
                 funded = app_obj.funded_amnt or app_obj.loan_amnt
@@ -391,7 +441,65 @@ async def score_batch(
                 log_decision(session, username, app_obj, pd_score, decision, tier, el)
 
                 results.append({
-                    **applicant_data,
+                    "row":           idx + 1,
+                    "pd_score":      round(pd_score, 4),
+                    "pd_pct":        round(pd_score * 100, 2),
+                    "risk_tier":     tier,
+                    "tier_color":    color,
+                    "decision":      decision,
+                    "expected_loss": el,
+                    "funded_amnt":   funded,
+                    "top_reason":    shap_reasons[0]["feature"] if shap_reasons else "",
+                    "error":         "",
+                })
+            except Exception as e:
+                results.append({
+                    "row":           idx + 1,
+                    "pd_score":      None,
+                    "pd_pct":        None,
+                    "risk_tier":     "ERROR",
+                    "tier_color":    "#666",
+                    "decision":      "ERROR",
+                    "expected_loss": None,
+                    "funded_amnt":   None,
+                    "top_reason":    "",
+                    "error":         str(e),
+                })
+
+        return {"results": results, "total": len(results)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/score/batch/csv")
+async def score_batch_csv(
+    file:    UploadFile = File(...),
+    session: Session    = Depends(get_session),
+):
+    """Score a CSV of applicants, return results as a downloadable CSV."""
+    username = "admin"
+    try:
+        content = await file.read()
+        df      = pd.read_csv(io.BytesIO(content))
+        rows    = []
+
+        for idx, row in df.iterrows():
+            try:
+                raw      = _sanitize_batch_row(row.to_dict())
+                filtered = {k: v for k, v in raw.items() if k in APPLICANT_FIELD_NAMES}
+                app_obj  = ApplicantInput(**filtered)
+
+                pd_score, shap_reasons = score_applicant(app_obj)
+                tier, color, decision  = get_risk_tier(pd_score)
+                funded = app_obj.funded_amnt or app_obj.loan_amnt
+                el     = round(pd_score * LGD * funded, 2)
+
+                log_decision(session, username, app_obj, pd_score, decision, tier, el)
+
+                rows.append({
+                    **raw,
                     "pd_score":      round(pd_score, 4),
                     "pd_pct":        round(pd_score * 100, 2),
                     "risk_tier":     tier,
@@ -401,11 +509,11 @@ async def score_batch(
                     "error":         "",
                 })
             except Exception as e:
-                results.append({**row.to_dict(), "pd_score": None,
-                                 "risk_tier": "ERROR", "decision": "ERROR",
-                                 "expected_loss": None, "error": str(e)})
+                rows.append({**row.to_dict(), "pd_score": None,
+                             "risk_tier": "ERROR", "decision": "ERROR",
+                             "expected_loss": None, "error": str(e)})
 
-        out_df = pd.DataFrame(results)
+        out_df = pd.DataFrame(rows)
         buf    = io.StringIO()
         out_df.to_csv(buf, index=False)
         buf.seek(0)
@@ -425,6 +533,39 @@ def model_card():
     if bundle:
         return bundle.get("model_card", {})
     return {"status": "demo mode — no model loaded"}
+
+class ContactCreate(BaseModel):
+    name: str = ""
+    email: str
+    company: str = ""
+    demo_date: str = ""
+    team_size: str = ""
+    message: str = ""
+
+@app.post("/api/contact")
+def create_contact(lead: ContactCreate, session: Session = Depends(get_session)):
+    db_lead = ContactLead(
+        **lead.dict(),
+        submitted_at=datetime.utcnow().isoformat()
+    )
+    session.add(db_lead)
+    session.commit()
+    return {"status": "success", "detail": "Contact lead saved."}
+
+class SubscribeCreate(BaseModel):
+    email: str
+
+@app.post("/api/subscribe")
+def create_subscribe(sub: SubscribeCreate, session: Session = Depends(get_session)):
+    db_sub = NewsletterSubscriber(
+        email=sub.email,
+        subscribed_at=datetime.utcnow().isoformat()
+    )
+    session.add(db_sub)
+    session.commit()
+    return {"status": "success", "detail": "Subscribed successfully."}
+
+
 
 @app.get("/audit")
 def get_audit(session: Session = Depends(get_session)):
