@@ -1,0 +1,110 @@
+/* App-specific styles */
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* Navigation link styles */
+.nav-link {
+  color: rgba(236, 237, 248, 0.6);
+  transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+}
+
+.nav-link:hover {
+  color: #e8f532;
+}
+
+.nav-link::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: linear-gradient(90deg, #e8f532, #00e5c5);
+  transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.nav-link:hover::after {
+  width: 100%;
+}
+
+/* Animations */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes spin-reverse {
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.1); }
+}
+
+@keyframes bar-grow {
+  from { width: 0; }
+}
+
+/* Form input focus states */
+.form-input:focus {
+  outline: none;
+  border-color: rgba(232, 245, 50, 0.5);
+  background: rgba(232, 245, 50, 0.04);
+  box-shadow: 0 0 0 3px rgba(232, 245, 50, 0.08);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(232, 245, 50, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(232, 245, 50, 0.4);
+}
+
+/* Table hover effect */
+table tbody tr:hover {
+  background: rgba(232, 245, 50, 0.03);
+}
+
+/* Selection styling */
+::selection {
+  background: rgba(232, 245, 50, 0.3);
+  color: white;
+}
+
+/* Focus visible for accessibility */
+*:focus-visible {
+  outline: 2px solid rgba(232, 245, 50, 0.5);
+  outline-offset: 2px;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
